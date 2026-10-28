@@ -274,6 +274,35 @@ ssh root@<服务器IP> 'cd /opt/apps/points-mall && bash ops/restore-drill.sh'
 cat /opt/backups/health-alerts.log     # 看告警历史
 ```
 
+### 4. 故障演练（自动量「发现/恢复」耗时）
+
+```bash
+ssh root@<服务器IP> 'cd /opt/apps/points-mall && bash ops/fail-drill.sh all'
+```
+
+它会依次：
+```
+① 停掉 postgres → 轮询 /api/health 直到探测到异常 → 记「发现耗时」
+② 启回 postgres → 轮询直到恢复           → 记「恢复耗时」
+③ 同样跑一遍停/启 api
+④ 结果追加到 /opt/backups/fail-drill.log
+```
+
+**这就是你可以写进简历的东西**：
+
+```
+做过故障演练：数据库宕机 3 秒发现、8 秒恢复；
+API 宕机 2 秒发现、5 秒恢复（Docker 自动重启）
+```
+
+另外几个剧本建议手工做一次（记录现象/发现时间/恢复时间）：
+
+| 剧本 | 制造方式 | 关注什么 |
+|---|---|---|
+| 磁盘写满 | `fallocate -l 100G /tmp/fill` | 日志报什么？备份是否失败？ |
+| 误删数据 | `delete from product` | 用 `restore-drill.sh` 量恢复要多久 |
+| 应用配置错 | 把 `.env` 里 JWT_SECRET 改短 | 启动失败时日志是否够定位 |
+
 ### 4. 故障演练剧本（手工做，练的是判断力）
 
 | 剧本 | 制造故障 | 你要观察/记录 |
