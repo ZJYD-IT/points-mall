@@ -73,6 +73,9 @@ jobs:
     name: 部署到服务器
     needs: build-push
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read          # 拉私有 package 需要这个
     steps:
       - uses: actions/checkout@v4
 
@@ -82,6 +85,8 @@ jobs:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          # GITHUB_TOKEN 由 Actions 自动注入，这里只给它读 package 的权限
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.build-push.outputs.tag }}
           OWNER: ${{ needs.build-push.outputs.owner }}
         run: |
@@ -93,9 +98,12 @@ jobs:
           scp deploy/docker-compose.yml deploy/deploy.sh \
               "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
 
-          # 首次部署时把 REGISTRY 写进服务器 .env（已存在则不覆盖其他变量）
           ssh "$DEPLOY_USER@$DEPLOY_HOST" "
+            set -e
             cd '$DEPLOY_PATH'
+            # 首次部署时把 REGISTRY 写进服务器 .env（已存在就不动，避免覆盖别的变量）
             grep -q '^REGISTRY=' .env 2>/dev/null || echo 'REGISTRY=$REGISTRY/$OWNER' >> .env
+            # 用本次运行的 GITHUB_TOKEN 登录 ghcr，这样组织下的私有 package 也能拉
+            echo '$GHCR_TOKEN' | docker login ghcr.io -u '${{ github.actor }}' --password-stdin >/dev/null
             bash deploy.sh $TAG
           "
