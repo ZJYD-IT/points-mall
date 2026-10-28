@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  api:
+    name: 后端编译
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      - name: mvn package
+        working-directory: apps/api
+        run: ./mvnw -B package -DskipTests
+      # 加了测试之后把 -DskipTests 去掉即可
+
+  web:
+    name: 前端构建 (${{ matrix.app }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [shop, admin]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: npm install & build
+        working-directory: apps/${{ matrix.app }}
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+      # 提交了 package-lock.json 之后，把上面一行换成 npm ci 更快更稳

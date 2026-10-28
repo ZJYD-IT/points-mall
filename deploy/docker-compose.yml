@@ -1,0 +1,55 @@
+name: points-mall
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-points}
+      POSTGRES_USER: ${POSTGRES_USER:-points}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?请在 .env 里设置 POSTGRES_PASSWORD}
+      TZ: Asia/Shanghai
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-points} -d ${POSTGRES_DB:-points}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    # 故意不映射端口：数据库只走容器内网，外面连不上
+
+  api:
+    image: ${REGISTRY:?请在 .env 里设置 REGISTRY，例如 ghcr.io/yourname}/points-api:${TAG:-latest}
+    build:
+      context: ../apps/api
+    restart: unless-stopped
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-points}
+      DB_USERNAME: ${POSTGRES_USER:-points}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET:?请在 .env 里设置 JWT_SECRET}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost}
+      TZ: Asia/Shanghai
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/api/health >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 40s
+
+  web:
+    image: ${REGISTRY:?请在 .env 里设置 REGISTRY}/points-web:${TAG:-latest}
+    build:
+      context: ..
+      dockerfile: deploy/web/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - api
+
+volumes:
+  pgdata:

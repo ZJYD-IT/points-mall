@@ -1,0 +1,101 @@
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '镜像标签（留空则用当前 commit 短 SHA）'
+        required: false
+        default: ''
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  build-push:
+    name: 构建并推送镜像
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      owner: ${{ steps.meta.outputs.owner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: meta
+        name: 计算 tag 与镜像命名空间
+        run: |
+          TAG="${{ inputs.tag }}"
+          if [ -z "$TAG" ]; then TAG="${GITHUB_SHA::7}"; fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          # ghcr 要求全小写
+          echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 构建并推送 API 镜像
+        uses: docker/build-push-action@v6
+        with:
+          context: apps/api
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ steps.meta.outputs.owner }}/points-api:${{ steps.meta.outputs.tag }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: 构建两个前端
+        run: |
+          for app in shop admin; do
+            echo "=== building $app ==="
+            ( cd "apps/$app" && npm install --no-audit --no-fund && npm run build )
+          done
+
+      - name: 构建并推送 Web 镜像
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/web/Dockerfile
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ steps.meta.outputs.owner }}/points-web:${{ steps.meta.outputs.tag }}
+
+  deploy:
+    name: 部署到服务器
+    needs: build-push
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 通过 SSH 部署
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          TAG: ${{ needs.build-push.outputs.tag }}
+          OWNER: ${{ needs.build-push.outputs.owner }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+          # 每次部署都同步编排文件和脚本，保证服务器上的配置和仓库一致
+          scp deploy/docker-compose.yml deploy/deploy.sh \
+              "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
+
+          # 首次部署时把 REGISTRY 写进服务器 .env（已存在则不覆盖其他变量）
+          ssh "$DEPLOY_USER@$DEPLOY_HOST" "
+            cd '$DEPLOY_PATH'
+            grep -q '^REGISTRY=' .env 2>/dev/null || echo 'REGISTRY=$REGISTRY/$OWNER' >> .env
+            bash deploy.sh $TAG
+          "
