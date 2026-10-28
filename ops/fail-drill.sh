@@ -13,8 +13,13 @@ cd "$APP_DIR"
 mkdir -p "$(dirname "$LOG")" 2>/dev/null || true
 
 probe() {
-  # 返回 0 表示健康
-  curl -sf -m 3 "$HEALTH" >/dev/null 2>&1
+  # 判定标准：响应体里必须出现 "status":"UP"
+  # （启用 HTTPS 后 80 会 301 跳转，只看 HTTP 状态码会误判成健康）
+  local body
+  body="$(curl -s -k -m 3 "https://127.0.0.1/api/health" 2>/dev/null || true)"
+  [[ "$body" == *'"status":"UP"'* ]] && return 0
+  body="$(curl -s -m 3 "$HEALTH" 2>/dev/null || true)"
+  [[ "$body" == *'"status":"UP"'* ]]
 }
 
 wait_down() {

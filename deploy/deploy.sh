@@ -48,9 +48,20 @@ echo "==> 重启 api / web（数据库容器不动）"
 TAG="$TAG" docker compose up -d --no-deps api web
 
 # ---------- 4. 健康检查 ----------
-echo "==> 健康检查 http://127.0.0.1/api/health"
+# 健康检查必须校验响应体里的 status=UP：
+#   ① 启用 HTTPS 后 80 会 301 跳转，curl -f 对 301 不报错，只看状态码会「假通过」
+#   ② body 里必须真出现 status":"UP"，说明它真的连上数据库了
+health_ok() {
+  local body
+  body="$(curl -s -k -m 5 "https://127.0.0.1/api/health" 2>/dev/null \
+          || curl -s -m 5 "http://127.0.0.1/api/health" 2>/dev/null \
+          || true)"
+  [[ "$body" == *'"status":"UP"'* ]]
+}
+
+echo "==> 健康检查 /api/health（HTTP 或 HTTPS 都行，但必须是 status=UP）"
 for i in $(seq 1 30); do
-  if curl -fsS -m 5 http://127.0.0.1/api/health >/dev/null 2>&1; then
+  if health_ok; then
     echo "==> ✅ 健康检查通过（约 $((i * 2)) 秒）"
     echo "$TAG" > .tag
     docker image prune -f --filter "until=168h" >/dev/null 2>&1 || true
