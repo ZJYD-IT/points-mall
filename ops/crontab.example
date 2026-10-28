@@ -1,0 +1,5 @@
+# 安装：crontab -e 后把下面两行粘进去（路径按实际情况改）
+# 每天 03:10 备份，保留 7 份
+10 3 * * * /opt/apps/points-mall/ops/backup.sh >> /opt/backups/backup.log 2>&1
+# 每 5 分钟探测一次健康，只在状态变化时写告警
+*/5 * * * * /opt/apps/points-mall/ops/health-watch.sh >> /opt/backups/health.log 2>&1

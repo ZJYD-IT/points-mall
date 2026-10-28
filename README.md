@@ -216,3 +216,71 @@ docker compose up -d api web              ❌ 会用 latest 然后尝试本地�
 8. **发布先确保数据库在跑**：`deploy.sh` 会先拉起并等待 postgres 健康，
    再 `--no-deps` 重启 api/web —— 不重启数据库，但也不会漏掉它。
 9. **镜像 tag 用 commit SHA**：可追溯、可回滚；`deploy.sh` 健康检查失败会自动退回上一个 tag。
+
+---
+
+## 九、运维：备份 / 恢复演练 / 监控
+
+脚本都在 `ops/`，部署时会自动同步到服务器 `$DEPLOY_PATH/ops/`。
+
+### 1. 备份
+
+```bash
+# 手动跑一次
+ssh root@<服务器IP> 'cd /opt/apps/points-mall && bash ops/backup.sh'
+
+# 装定时任务
+ssh root@<服务器IP> 'crontab -e'
+# 把 ops/crontab.example 里的两行粘进去
+```
+
+备份文件落在 `/opt/backups/points-mall/`，`-Fc` 自定义格式，保留最近 7 份。
+每次备份都会用 `pg_restore --list` 做**完整性自检** —— 读不出来的备份直接删掉并报错，
+避免"以为备份了其实是个空文件"。
+
+### 2. 恢复演练（这是重点）
+
+```bash
+ssh root@<服务器IP> 'cd /opt/apps/points-mall && bash ops/restore-drill.sh'
+```
+
+它会：
+
+```
+① 新建临时库 drill_<时间戳>
+② 用最近一份备份 pg_restore 进去
+③ 逐表比对行数：admin_user / app_user / product / redeem_order / points_ledger
+④ 积分对账：用户余额 vs 流水累计
+⑤ 删掉临时库
+⑥ 输出 RTO（恢复耗时）
+```
+
+**输出示例**：
+
+```
+=== 结果 ===
+  恢复耗时（RTO）: 3 秒
+  ✅ 恢复演练通过
+```
+
+> "我做过恢复演练，RTO 是 3 秒" —— 这句话比"我每天备份"值钱得多。
+
+### 3. 监控
+
+`ops/health-watch.sh` 每 5 分钟探一次 `/api/health`，**只在状态变化时**写一条告警
+（避免每 5 分钟刷一条），可选通过 `HEALTH_WEBHOOK` 环境变量推 webhook。
+
+```bash
+cat /opt/backups/health-alerts.log     # 看告警历史
+```
+
+### 4. 故障演练剧本（手工做，练的是判断力）
+
+| 剧本 | 制造故障 | 你要观察/记录 |
+|---|---|---|
+| 数据库挂了 | `docker compose stop postgres` | 前端报什么错？多久发现？`docker compose start postgres` 后能自愈吗？ |
+| API 挂了 | `docker compose stop api` | 健康检查多久探测到？deploy.sh 会回滚吗？ |
+| 磁盘满了 | `fallocate -l 100G /tmp/fill` | 日志里报什么？备份会失败吗？怎么定位？ |
+| 误删数据 | `delete from product` | 从备份恢复到可用要多久？（正好用 restore-drill 量） |
+
+每次演练记录三件事：**现象 / 发现时间 / 恢复时间**。这三行就是你的运维履历。
