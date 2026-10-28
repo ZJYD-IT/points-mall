@@ -2,11 +2,10 @@
   <a-layout style="height: 100%">
     <a-layout-sider theme="dark" width="200">
       <div class="logo">积分商城后台</div>
-      <a-menu theme="dark" mode="inline" :selected-keys="['dashboard']">
-        <a-menu-item key="dashboard">概览</a-menu-item>
-        <a-menu-item key="products" disabled>商品管理（Phase 2）</a-menu-item>
-        <a-menu-item key="orders" disabled>兑换订单（Phase 2）</a-menu-item>
-        <a-menu-item key="users" disabled>用户与积分（Phase 2）</a-menu-item>
+      <a-menu theme="dark" mode="inline" :selected-keys="['/']" @click="go">
+        <a-menu-item key="/">概览</a-menu-item>
+        <a-menu-item key="/products">商品管理</a-menu-item>
+        <a-menu-item key="/orders">兑换订单</a-menu-item>
       </a-menu>
     </a-layout-sider>
     <a-layout>
@@ -22,7 +21,7 @@
             </a-descriptions-item>
             <a-descriptions-item label="当前用户">{{ user.displayName }}</a-descriptions-item>
             <a-descriptions-item label="登录角色">{{ user.role }}</a-descriptions-item>
-            <a-descriptions-item label="阶段">Phase 1 · 骨架 + 认证 + 部署</a-descriptions-item>
+            <a-descriptions-item label="阶段">Phase 2 · 商品管理 + 兑换流程</a-descriptions-item>
           </a-descriptions>
         </a-card>
       </a-layout-content>
@@ -38,6 +37,7 @@ import { http } from '../api'
 const router = useRouter()
 const user = computed(() => JSON.parse(localStorage.getItem('admin_user') || '{}'))
 const health = ref('')
+const go = ({ key }) => router.push(key)
 
 onMounted(async () => {
   try {

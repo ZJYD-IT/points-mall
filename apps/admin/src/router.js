@@ -2,11 +2,12 @@ import { createRouter, createWebHashHistory } from 'vue-router'
 
 const routes = [
   { path: '/', component: () => import('./views/Dashboard.vue') },
+  { path: '/products', component: () => import('./views/Products.vue') },
+  { path: '/orders', component: () => import('./views/Orders.vue') },
   { path: '/login', component: () => import('./views/Login.vue') }
 ]
 
 const router = createRouter({
-  // hash 路由 + base，部署到 /admin/ 下不用改 nginx 的 rewrite
   history: createWebHashHistory(import.meta.env.BASE_URL),
   routes
 })

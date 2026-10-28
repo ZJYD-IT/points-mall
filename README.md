@@ -13,7 +13,7 @@
 ## 当前进度
 
 - [x] Phase 1：骨架、数据库迁移、JWT 认证、Docker 编排、一键发布
-- [ ] Phase 2：商品管理、积分账户流水、兑换流程（扣积分 + 扣库存 + 幂等 + 事务）
+- [x] Phase 2：商品管理、积分流水、兑换流程（幂等 + 事务 + 原子扣减防超卖）
 - [ ] Phase 3：客户端页面、订单、监控、备份演练
 - [ ] Phase 4（可选）：AI 客服 / 推荐
 
@@ -152,7 +152,38 @@ GitHub 仓库页面 → **Actions** → 左侧 **Deploy** → 右侧 **Run workf
 
 ---
 
-## 六、日常命令
+## 六、接口清单
+
+| 方法 | 路径 | 权限 | 说明 |
+|---|---|---|---|
+| POST | `/api/auth/admin/login` | 公开 | 后台登录 |
+| POST | `/api/auth/user/login` | 公开 | 客户端登录 |
+| GET | `/api/health` | 公开 | 健康检查（发布流水线用） |
+| GET | `/api/shop/me` | USER | 我的信息 + 积分余额 |
+| GET | `/api/shop/products` | USER | 上架商品 |
+| POST | `/api/shop/redeem` | USER | **兑换**（幂等键必填） |
+| GET | `/api/shop/orders` | USER | 我的兑换单 |
+| GET | `/api/shop/ledger` | USER | 我的积分明细 |
+| GET | `/api/admin/products` | ADMIN | 全部商品 |
+| POST | `/api/admin/products` | ADMIN | 新增商品 |
+| PUT | `/api/admin/products/{id}` | ADMIN | 修改/上下架 |
+| GET | `/api/admin/orders` | ADMIN | 全部兑换单 |
+
+### 兑换流程怎么保证不出错
+
+```
+① 幂等：唯一约束 (user_id, idempotency_key)
+   └─ 同一笔重复提交 → 第二次直接返回已有订单，不重复扣积分
+② 防超卖 / 防透支：条件更新一条 SQL 搞定
+   update product   set stock  = stock  - ? where id=? and stock  >= ?
+   update app_user  set points = points - ? where id=? and points >= ?
+   └─ 返回影响行数 0 就抛业务异常，判断和扣减是原子的
+③ 一致性：扣库存 + 扣积分 + 写订单 + 写流水在同一个事务里
+   └─ 任何一步失败全部回滚，不会出现"扣了积分没给货"
+④ 可对账：每次积分变动都写 points_ledger，余额可用流水全量重算
+```
+
+## 七、日常命令
 
 ```bash
 cd /opt/apps/points-mall
@@ -165,11 +196,15 @@ docker compose down -v            # ⚠️ 连数据一起删
 
 # 手动执行一次部署（等价于点按钮）
 bash deploy.sh <tag>
+
+# ⚠️ 手动跑 compose 时，凡是涉及 api / web 都要带 TAG，否则会退化成"本地构建"
+TAG=<tag> docker compose up -d api web    ✅
+docker compose up -d api web              ❌ 会用 latest 然后尝试本地构建
 ```
 
 ---
 
-## 七、设计上的几个决定（面试会被问）
+## 八、设计上的几个决定（面试会被问）
 
 1. **表结构只由 Flyway 管**：`ddl-auto: validate`，JPA 不会偷偷改表。
 2. **积分余额 + 流水双写**：`app_user.points` 是冗余余额，`points_ledger` 是只增流水，可对账。
@@ -178,3 +213,6 @@ bash deploy.sh <tag>
 5. **健康检查在流水线里**：不是"部署成功"就算成功，`/api/health` 通过才算。
 6. **数据库不映射端口**：只走 Docker 内网，外面连不上。
 7. **只暴露必要端口**：ufw 只放 22/80/443。
+8. **发布先确保数据库在跑**：`deploy.sh` 会先拉起并等待 postgres 健康，
+   再 `--no-deps` 重启 api/web —— 不重启数据库，但也不会漏掉它。
+9. **镜像 tag 用 commit SHA**：可追溯、可回滚；`deploy.sh` 健康检查失败会自动退回上一个 tag。

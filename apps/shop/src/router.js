@@ -2,10 +2,11 @@ import { createRouter, createWebHashHistory } from 'vue-router'
 
 const routes = [
   { path: '/', component: () => import('./views/Home.vue') },
+  { path: '/orders', component: () => import('./views/Orders.vue') },
+  { path: '/ledger', component: () => import('./views/Ledger.vue') },
   { path: '/login', component: () => import('./views/Login.vue') }
 ]
 
-// 客户端用 hash 路由，避免 nginx 需要额外的 try_files 配置
 const router = createRouter({ history: createWebHashHistory(), routes })
 
 router.beforeEach((to) => {
