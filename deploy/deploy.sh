@@ -43,7 +43,7 @@ TAG="$TAG" docker compose up -d --no-deps api web
 # ---------- 4. 健康检查 ----------
 echo "==> 健康检查 http://127.0.0.1/api/health"
 for i in $(seq 1 30); do
-  if curl -fsS http://127.0.0.1/api/health >/dev/null 2>&1; then
+  if curl -fsS -m 5 http://127.0.0.1/api/health >/dev/null 2>&1; then
     echo "==> ✅ 健康检查通过（约 $((i * 2)) 秒）"
     echo "$TAG" > .tag
     docker image prune -f --filter "until=168h" >/dev/null 2>&1 || true

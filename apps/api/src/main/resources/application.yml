@@ -10,6 +10,10 @@ spring:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/points}
     username: ${DB_USERNAME:points}
     password: ${DB_PASSWORD:points_dev_pwd}
+    hikari:
+      # 拿不到连接 3 秒就失败：健康检查要「快速说不」，不能挂在那儿等 30 秒
+      connection-timeout: 3000
+      validation-timeout: 2000
   jpa:
     hibernate:
       ddl-auto: validate          # 表结构只由 Flyway 管，绝不让 JPA 自动改
