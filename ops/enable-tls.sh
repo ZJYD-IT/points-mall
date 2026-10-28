@@ -13,6 +13,10 @@ mkdir -p acme certs
 chmod 755 acme
 chmod 700 certs
 
+TAG="$(cat .tag 2>/dev/null || echo '')"
+[[ -z "$TAG" ]] && { echo "❌ 找不到 .tag，无法确定当前镜像版本，先跑一次发布"; exit 1; }
+echo "    当前镜像 TAG: $TAG"
+
 echo "==> 1/4 检查域名解析"
 MYIP="$(curl -s -m 10 https://api.ipify.org || true)"
 RESOLVED="$(getent hosts "$DOMAIN" | awk '{print $1}' | head -1 || true)"
@@ -92,20 +96,37 @@ server {
 }
 CONF
 
-echo "==> 4/4 校验配置并应用（校验失败自动还原）"
-if docker compose exec -T web nginx -t >/dev/null 2>&1; then
-  docker compose restart web
-  echo
-  echo "✅ HTTPS 已启用"
-  echo "    https://$DOMAIN/"
-  echo "    https://$DOMAIN/admin/"
-  echo
-  echo "别忘了续期（crontab.example 里有，每周跑一次）"
-else
+echo "==> 4/5 校验 nginx 配置（校验失败自动还原）"
+if ! docker compose exec -T web nginx -t >/dev/null 2>&1; then
   echo "❌ nginx -t 校验失败，还原配置："
   docker compose exec -T web nginx -t 2>&1 | sed 's/^/    /' || true
   cp "$BAK" nginx.conf
-  docker compose restart web
   echo "    已还原到 $BAK"
   exit 1
 fi
+echo "    ✅ 配置校验通过"
+
+echo "==> 5/5 确保 compose 发布 443 并重建 web"
+if ! grep -q '443:443' docker-compose.yml; then
+  cp docker-compose.yml "docker-compose.yml.bak.$(date +%Y%m%d-%H%M%S)"
+  sed -i 's|      - "80:80"|      - "80:80"\n      - "443:443"|' docker-compose.yml
+  echo "    已给 docker-compose.yml 补上 443 映射"
+else
+  echo "    443 映射已存在"
+fi
+
+# 必须用 up -d（会按新端口重建容器）；restart 不会应用新的端口映射
+TAG="$TAG" docker compose up -d web
+sleep 3
+
+echo
+echo "✅ HTTPS 已启用"
+echo "    https://$DOMAIN/"
+echo "    https://$DOMAIN/admin/"
+echo "    https://$DOMAIN/api/health"
+echo
+echo "自检："
+code=$(curl -s -k -o /dev/null -w '%{http_code}' -m 10 "https://127.0.0.1/api/health" || echo 000)
+echo "    https://127.0.0.1/api/health → $code"
+echo
+echo "别忘了续期（crontab.example 里有，每周跑一次）"
