@@ -48,6 +48,12 @@ services:
     restart: unless-stopped
     ports:
       - "80:80"
+    # 配置文件从宿主机挂进去：改配置只需换文件 + restart，不用重建镜像
+    # 证书和 ACME 挑战目录也挂进来，供 certbot 容器读写
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./acme:/var/www/acme
+      - ./certs:/etc/letsencrypt:ro
     depends_on:
       - api
 

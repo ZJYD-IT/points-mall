@@ -1,5 +1,7 @@
-# 安装：crontab -e 后把下面两行粘进去（路径按实际情况改）
+# 安装：crontab -e 后把下面几行粘进去（路径按实际情况改）
 # 每天 03:10 备份，保留 7 份
 10 3 * * * /opt/apps/points-mall/ops/backup.sh >> /opt/backups/backup.log 2>&1
 # 每 5 分钟探测一次健康，只在状态变化时写告警
 */5 * * * * /opt/apps/points-mall/ops/health-watch.sh >> /opt/backups/health.log 2>&1
+# 每周一 04:00 续期证书（只在快到期时才真正续，然后重启 web 让新证书生效）
+0 4 * * 1 cd /opt/apps/points-mall && docker run --rm -v "$PWD/certs:/etc/letsencrypt" -v "$PWD/acme:/var/www/acme" certbot/certbot renew --webroot -w /var/www/acme --quiet && docker compose restart web

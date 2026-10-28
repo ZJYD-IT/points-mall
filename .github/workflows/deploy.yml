@@ -95,7 +95,7 @@ jobs:
           ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
 
           # 每次部署都同步编排文件、部署脚本和运维脚本，保证服务器上的东西和仓库一致
-          scp deploy/docker-compose.yml deploy/deploy.sh \
+          scp deploy/docker-compose.yml deploy/deploy.sh deploy/edge/nginx.conf \
               "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
           scp -r ops "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
           ssh "$DEPLOY_USER@$DEPLOY_HOST" "chmod +x '$DEPLOY_PATH'/ops/*.sh"

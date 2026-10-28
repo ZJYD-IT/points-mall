@@ -12,6 +12,13 @@ cd "$(dirname "$0")"
 
 PREV_TAG="$(cat .tag 2>/dev/null || echo '')"
 
+# nginx.conf 是挂载进 web 容器的。如果它不存在，docker 会自动建一个同名目录，
+# 导致 nginx 启动失败。这里提前拦住，给出明确提示。
+if [[ ! -f nginx.conf ]]; then
+  echo "❌ 缺少 nginx.conf（应由发布流水线同步到当前目录）"
+  exit 1
+fi
+
 # ---------- 1. 确保数据库在运行（首次部署 / 服务器重启后都需要）----------
 echo "==> 确保数据库容器在运行"
 docker compose up -d postgres
